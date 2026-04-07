@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4"><i class="fas fa-shield-alt me-2 text-danger"></i>管理员控制台</h2>
+        
+        <!-- 统计数据 -->
+        <div class="row mb-4" id="stats-row">
+            <div class="col-md-2">
+                <div class="card text-white bg-primary text-center p-3">
+                    <h3 id="stat-users">-</h3><small>注册用户</small>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-white bg-success text-center p-3">
+                    <h3 id="stat-movies">-</h3><small>影视剧数</small>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-white bg-info text-center p-3">
+                    <h3 id="stat-comments">-</h3><small>评论总数</small>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-white bg-warning text-center p-3">
+                    <h3 id="stat-likes">-</h3><small>点赞总数</small>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-white bg-secondary text-center p-3">
+                    <h3 id="stat-favorites">-</h3><small>收藏总数</small>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card text-white bg-danger text-center p-3">
+                    <h3 id="stat-banned">-</h3><small>封禁用户</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- 标签页 -->
+        <ul class="nav nav-tabs mb-4" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#users-tab">用户管理</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#movies-tab">影视管理</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#add-movie-tab">添加影视</button>
+            </li>
+        </ul>
+        
+        <div class="tab-content">
+            <!-- 用户管理 -->
+            <div class="tab-pane fade show active" id="users-tab">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th><th>用户名</th><th>邮箱</th><th>角色</th><th>注册时间</th><th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- 影视管理 -->
+            <div class="tab-pane fade" id="movies-tab">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th><th>标题</th><th>年份</th><th>国家</th><th>题材</th><th>点赞</th><th>评论</th><th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="movies-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- 添加影视 -->
+            <div class="tab-pane fade" id="add-movie-tab">
+                <div class="card">
+                    <div class="card-body">
+                        <h5>添加新影视剧</h5>
+                        <form id="add-movie-form">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">标题 *</label>
+                                    <input type="text" class="form-control" id="new-title" required>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">年份</label>
+                                    <input type="number" class="form-control" id="new-year" placeholder="如：2023">
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">国家 *</label>
+                                    <select class="form-select" id="new-country"></select>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <label class="form-label">题材 *</label>
+                                    <select class="form-select" id="new-genre"></select>
+                                </div>
+                                <div class="col-md-9 mb-3">
+                                    <label class="form-label">海报图片URL</label>
+                                    <input type="text" class="form-control" id="new-poster" placeholder="https://...">
+                                </div>
+                                <div class="col-12 mb-3">
+                                    <label class="form-label">剧情描述</label>
+                                    <textarea class="form-control" id="new-description" rows="4"></textarea>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">添加影视剧</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const token = localStorage.getItem('token');
+    
+    // 检查是否已登录且为管理员
+    if (!token) {
+        alert('请先登录');
+        window.location.href = '/login';
+    }
+
+    async function loadStats() {
+        const res = await fetch('/api/admin/stats', {
+            headers: {'Authorization': `Bearer ${token}`}
+        });
+        if (res.status === 403) {
+            alert('您没有管理员权限');
+            window.location.href = '/';
+            return;
+        }
+        const data = await res.json();
+        document.getElementById('stat-users').textContent = data.total_users;
+        document.getElementById('stat-movies').textContent = data.total_movies;
+        document.getElementById('stat-comments').textContent = data.total_comments;
+        document.getElementById('stat-likes').textContent = data.total_likes;
+        document.getElementById('stat-favorites').textContent = data.total_favorites;
+        document.getElementById('stat-banned').textContent = data.banned_users;
+    }
+
+    async function loadUsers() {
+        const res = await fetch('/api/admin/users', {
+            headers: {'Authorization': `Bearer ${token}`}
+        });
+        const users = await res.json();
+        const tbody = document.getElementById('users-table-body');
+        tbody.innerHTML = users.map(u => `
+            <tr class="${u.role === 'banned' ? 'table-danger' : ''}">
+                <td>${u.id}</td>
+                <td>${u.username}</td>
+                <td>${u.email}</td>
+                <td>
+                    <span class="badge ${u.role === 'admin' ? 'bg-danger' : u.role === 'banned' ? 'bg-secondary' : 'bg-primary'}">
+                        ${u.role === 'admin' ? '管理员' : u.role === 'banned' ? '已封禁' : '普通用户'}
+                    </span>
+                </td>
+                <td>${u.created_at}</td>
+                <td>
+                    ${u.role !== 'admin' ? (u.role === 'banned'
+                        ? `<button class="btn btn-sm btn-success" onclick="unbanUser(${u.id})">解禁</button>`
+                        : `<button class="btn btn-sm btn-danger" onclick="banUser(${u.id})">封禁</button>`)
+                        : '<span class="text-muted">-</span>'}
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function banUser(userId) {
+        if (!confirm('确定封禁该用户？')) return;
+        const res = await fetch(`/api/admin/user/${userId}/ban`, {
+            method: 'POST',
+            headers: {'Authorization': `Bearer ${token}`}
+        });
+        const data = await res.json();
+        alert(data.message || data.error);
+        loadUsers(); loadStats();
+    }
+
+    async function unbanUser(userId) {
+        const res = await fetch(`/api/admin/user/${userId}/unban`, {
+            method: 'POST',
+            headers: {'Authorization': `Bearer ${token}`}
+        });
+        const data = await res.json();
+        alert(data.message || data.error);
+        loadUsers(); loadStats();
+    }
+
+    async function loadMovies() {
+        const res = await fetch('/api/admin/movies', {
+            headers: {'Authorization': `Bearer ${token}`}
+        });
+        const movies = await res.json();
+        const tbody = document.getElementById('movies-table-body');
+        tbody.innerHTML = movies.map(m => `
+            <tr>
+                <td>${m.id}</td>
+                <td>${m.title}</td>
+                <td>${m.year || '-'}</td>
+                <td>${m.country || '-'}</td>
+                <td>${m.genre || '-'}</td>
+                <td>${m.likes_count}</td>
+                <td>${m.comments_count}</td>
+                <td>
+                    <button class="btn btn-sm btn-danger" onclick="deleteMovie(${m.id}, '${m.title}')">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function deleteMovie(movieId, title) {
+        if (!confirm(`确定删除《${title}》？此操作不可撤销！`)) return;
+        const res = await fetch(`/api/admin/movie/${movieId}`, {
+            method: 'DELETE',
+            headers: {'Authorization': `Bearer ${token}`}
+        });
+        const data = await res.json();
+        alert(data.message || data.error);
+        loadMovies(); loadStats();
+    }
+
+    async function loadSelectOptions() {
+        const [countriesRes, genresRes] = await Promise.all([
+            fetch('/api/countries'), fetch('/api/genres')
+        ]);
+        const countries = await countriesRes.json();
+        const genres = await genresRes.json();
+        
+        document.getElementById('new-country').innerHTML = countries.map(c =>
+            `<option value="${c.id}">${c.name}</option>`
+        ).join('');
+        document.getElementById('new-genre').innerHTML = genres.map(g =>
+            `<option value="${g.id}">${g.name}</option>`
+        ).join('');
+    }
+
+    document.getElementById('add-movie-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            title: document.getElementById('new-title').value,
+            year: parseInt(document.getElementById('new-year').value) || null,
+            country_id: parseInt(document.getElementById('new-country').value),
+            genre_id: parseInt(document.getElementById('new-genre').value),
+            poster_url: document.getElementById('new-poster').value,
+            description: document.getElementById('new-description').value
+        };
+        const res = await fetch('/api/admin/movie', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        alert(result.message || result.error);
+        if (res.ok) {
+            document.getElementById('add-movie-form').reset();
+            loadMovies(); loadStats();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStats();
+        loadUsers();
+        loadMovies();
+        loadSelectOptions();
+    });
+
+    // 切换标签时刷新
+    document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+        tab.addEventListener('shown.bs.tab', (e) => {
+            if (e.target.dataset.bsTarget === '#movies-tab') loadMovies();
+            if (e.target.dataset.bsTarget === '#users-tab') loadUsers();
+        });
+    });
+</script>
+{% endblock %}

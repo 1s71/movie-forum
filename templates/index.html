@@ -1,0 +1,545 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <!-- 左侧边栏 -->
+    <div class="col-md-3 mb-4">
+        <!-- 国家分类 -->
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header bg-primary text-white fw-bold">
+                <i class="fas fa-globe me-2"></i>按国家浏览
+            </div>
+            <div class="card-body" id="countries-list">
+                <div class="text-center py-2"><i class="fas fa-spinner fa-spin"></i></div>
+            </div>
+        </div>
+        <!-- 题材分类 -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white fw-bold">
+                <i class="fas fa-theater-masks me-2"></i>按题材浏览
+            </div>
+            <div class="card-body p-2" id="genres-list">
+                <div class="text-center py-2"><i class="fas fa-spinner fa-spin"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="col-md-9">
+        <!-- Banner -->
+        <div class="card mb-4 shadow-sm border-0" style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:#fff;">
+            <div class="card-body py-4">
+                <h3 class="mb-1"><i class="fas fa-film me-2 text-warning"></i>欢迎来到影视剧论坛</h3>
+                <p class="mb-3 text-white-50">发现全球精彩影视 · 查看豆瓣评分 · 分享观影体验</p>
+                <div class="input-group">
+                    <span class="input-group-text bg-dark border-secondary text-white">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <input type="text" class="form-control bg-dark border-secondary text-white" 
+                           id="search-input" placeholder="搜索影视剧标题..." 
+                           onkeyup="if(event.key==='Enter') searchMovies()">
+                    <button class="btn btn-warning" onclick="searchMovies()">搜索</button>
+                    <button class="btn btn-outline-light" onclick="clearSearch()">全部</button>
+                    <button class="btn btn-success" onclick="showAddMovieModal()">
+                        <i class="fas fa-plus me-1"></i>添加影视
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 当前筛选标签 -->
+        <div id="filter-tags" class="mb-3"></div>
+
+        <!-- 影视剧网格 -->
+        <div id="movies-container">
+            <div class="text-center py-5">
+                <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                <p class="mt-2 text-muted">加载中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentCountry = null, currentCountryName = null;
+    let currentGenre = null, currentGenreName = null;
+    let genreStyleMap = {};
+
+    const flagMap = {CN:'🇨🇳',US:'🇺🇸',JP:'🇯🇵',KR:'🇰🇷',UK:'🇬🇧',FR:'🇫🇷',IN:'🇮🇳',IT:'🇮🇹',ES:'🇪🇸',DE:'🇩🇪'};
+
+    // 渲染豆瓣评分徽章
+    function scoreHTML(score) {
+        if (!score) return '';
+        let cls = score >= 9 ? 'bg-success' : score >= 8 ? 'bg-warning text-dark' : score >= 7 ? 'bg-info text-dark' : 'bg-secondary';
+        return `<span class="badge ${cls} me-1"><i class="fas fa-star me-1" style="font-size:.7rem"></i>${score.toFixed(1)}</span>`;
+    }
+
+    async function loadCountries() {
+        const res = await fetch('/api/countries');
+        const countries = await res.json();
+        const container = document.getElementById('countries-list');
+        container.innerHTML = `
+            <div class="d-flex flex-wrap gap-1">
+                <button class="btn btn-primary btn-sm country-btn" onclick="filterByCountry(null,null)">全部</button>
+                ${countries.map(c => `
+                    <button class="btn btn-outline-primary btn-sm country-btn" 
+                            onclick="filterByCountry(${c.id},'${c.name}')"
+                            id="country-btn-${c.id}">
+                        ${flagMap[c.code] || '🌍'} ${c.name}
+                    </button>`).join('')}
+            </div>`;
+    }
+
+    async function loadGenres() {
+        const res = await fetch('/api/genres');
+        const genres = await res.json();
+        const styleNames = {
+            'genre-comedy':'comedy','genre-romance':'romance','genre-action':'action',
+            'genre-sci-fi':'sci-fi','genre-mystery':'mystery','genre-drama':'drama',
+            'genre-animation':'animation','genre-horror':'horror'
+        };
+        genres.forEach(g => {
+            const style = g.style ? styleNames[g.style] || g.style.replace('genre-','') : '';
+            genreStyleMap[g.id] = style;
+        });
+        const icons = {喜剧:'😂',爱情:'💕',动作:'⚡',科幻:'🚀',悬疑:'🔍',剧情:'🎭',动画:'🎨',恐怖:'👻',历史:'🏯',战争:'⚔️',犯罪:'🔫',奇幻:'🧙'};
+        const container = document.getElementById('genres-list');
+        container.innerHTML = `
+            <div class="genre-item active" onclick="filterByGenre(null,null)" id="genre-all">
+                🎬 全部题材
+            </div>` +
+            genres.map(g => `
+                <div class="genre-item" onclick="filterByGenre(${g.id},'${g.name}')" id="genre-item-${g.id}">
+                    ${icons[g.name] || '🎞'} ${g.name}
+                </div>`).join('');
+    }
+
+    async function loadMovies() {
+        const container = document.getElementById('movies-container');
+        container.innerHTML = '<div class="text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i></div>';
+        try {
+            let url = '/api/movies';
+            const params = new URLSearchParams();
+            if (currentCountry) params.append('country_id', currentCountry);
+            if (currentGenre) params.append('genre_id', currentGenre);
+            if (params.toString()) url += '?' + params.toString();
+
+            const res = await fetch(url);
+            const movies = await res.json();
+
+            if (movies.length === 0) {
+                container.innerHTML = `<div class="text-center py-5 text-muted">
+                    <i class="fas fa-film fa-3x mb-3 d-block"></i>暂无影视剧数据</div>`;
+                return;
+            }
+
+            if (currentGenre && genreStyleMap[currentGenre]) {
+                document.body.className = 'genre-' + genreStyleMap[currentGenre];
+            } else {
+                document.body.className = '';
+            }
+
+            container.innerHTML = '<div class="row">' +
+                movies.map(movie => {
+                    const poster = movie.poster_url && movie.poster_url.startsWith('http')
+                        ? movie.poster_url
+                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(movie.title)}&size=300&background=667eea&color=fff&bold=true&length=4`;
+                    const typeIcon = movie.is_series
+                        ? '<span class="badge bg-dark me-1"><i class="fas fa-tv" style="font-size:.65rem"></i> 剧集</span>'
+                        : '<span class="badge bg-dark me-1"><i class="fas fa-film" style="font-size:.65rem"></i> 电影</span>';
+                    return `
+                    <div class="col-md-6 col-lg-4 mb-4">
+                        <div class="card movie-card h-100">
+                            <div style="height:220px;overflow:hidden;position:relative;">
+                                <img src="${poster}" class="w-100 h-100" alt="${movie.title}"
+                                     style="object-fit:cover;"
+                                     onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(movie.title)}&size=300&background=667eea&color=fff&bold=true&length=4'">
+                                <!-- 评分浮层 -->
+                                <div style="position:absolute;top:8px;left:8px;">
+                                    ${scoreHTML(movie.douban_score)}
+                                </div>
+                            </div>
+                            <div class="card-body pb-2">
+                                <h6 class="card-title fw-bold mb-1">${movie.title}</h6>
+                                <div class="mb-2 d-flex flex-wrap gap-1 align-items-center">
+                                    <span class="badge bg-secondary">${movie.year || '未知'}</span>
+                                    <span class="badge bg-info text-dark">${movie.country || ''}</span>
+                                    <span class="badge bg-warning text-dark">${movie.genre || ''}</span>
+                                    ${typeIcon}
+                                </div>
+                                <p class="card-text text-muted small mb-0" style="overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">
+                                    ${movie.description || '暂无简介'}
+                                </p>
+                            </div>
+                            <div class="card-footer bg-transparent d-flex gap-2 pt-2">
+                                <a href="/movie?id=${movie.id}" class="btn btn-primary btn-sm flex-fill">
+                                    <i class="fas fa-play me-1"></i>查看详情
+                                </a>
+                                <button class="btn btn-outline-danger btn-sm like-btn" 
+                                        id="like-btn-${movie.id}"
+                                        onclick="quickLike(${movie.id}, this)" title="点赞">
+                                    <i class="fas fa-heart"></i>
+                                </button>
+                                <button class="btn btn-outline-warning btn-sm fav-btn"
+                                        id="fav-btn-${movie.id}"
+                                        onclick="quickFavorite(${movie.id}, this)" title="收藏">
+                                    <i class="fas fa-star"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('') + '</div>';
+        } catch(e) {
+            container.innerHTML = '<div class="alert alert-danger">加载失败，请刷新页面重试</div>';
+        }
+    }
+
+    function filterByCountry(id, name) {
+        currentCountry = id; currentCountryName = name;
+        document.querySelectorAll('.country-btn').forEach(btn => {
+            btn.classList.toggle('btn-primary', !id);
+            btn.classList.toggle('btn-outline-primary', !!id);
+        });
+        if (id) {
+            const btn = document.getElementById(`country-btn-${id}`);
+            if (btn) { btn.classList.add('btn-primary'); btn.classList.remove('btn-outline-primary'); }
+        }
+        updateFilterTags(); loadMovies();
+    }
+
+    function filterByGenre(id, name) {
+        currentGenre = id; currentGenreName = name;
+        document.querySelectorAll('.genre-item').forEach(el => el.classList.remove('active'));
+        const el = id ? document.getElementById(`genre-item-${id}`) : document.getElementById('genre-all');
+        if (el) el.classList.add('active');
+        updateFilterTags(); loadMovies();
+    }
+
+    function updateFilterTags() {
+        const tags = [];
+        if (currentCountryName) tags.push(`<span class="badge bg-primary me-2 p-2">${currentCountryName} <a href="#" onclick="filterByCountry(null,null)" class="text-white ms-1">✕</a></span>`);
+        if (currentGenreName) tags.push(`<span class="badge bg-success me-2 p-2">${currentGenreName} <a href="#" onclick="filterByGenre(null,null)" class="text-white ms-1">✕</a></span>`);
+        document.getElementById('filter-tags').innerHTML = tags.length ? '<p class="mb-2">当前筛选：' + tags.join('') + '</p>' : '';
+    }
+
+    async function searchMovies() {
+        const q = document.getElementById('search-input').value.trim();
+        if (!q) { loadMovies(); return; }
+        const container = document.getElementById('movies-container');
+        container.innerHTML = '<div class="text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i></div>';
+        const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+        const movies = await res.json();
+        if (movies.length === 0) {
+            container.innerHTML = `<div class="alert alert-info">未找到包含"${q}"的影视剧</div>`;
+            return;
+        }
+        container.innerHTML = `<div class="alert alert-success">搜索"${q}"找到 ${movies.length} 部影视剧</div>
+            <div class="row">` + movies.map(movie => {
+            const poster = movie.poster_url && movie.poster_url.startsWith('http') ? movie.poster_url
+                : `https://ui-avatars.com/api/?name=${encodeURIComponent(movie.title)}&size=300&background=random&color=fff&bold=true&length=4`;
+            return `<div class="col-md-6 col-lg-4 mb-4">
+                <div class="card movie-card h-100">
+                    <div style="height:220px;overflow:hidden;position:relative;">
+                        <img src="${poster}" class="w-100 h-100" style="object-fit:cover;" alt="${movie.title}">
+                        <div style="position:absolute;top:8px;left:8px;">${scoreHTML(movie.douban_score)}</div>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="card-title fw-bold">${movie.title}</h6>
+                        <span class="badge bg-secondary me-1">${movie.year || ''}</span>
+                        <span class="badge bg-info text-dark">${movie.country || ''}</span>
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <a href="/movie?id=${movie.id}" class="btn btn-primary btn-sm w-100">查看详情</a>
+                    </div>
+                </div></div>`;
+        }).join('') + '</div>';
+    }
+
+    function clearSearch() {
+        document.getElementById('search-input').value = '';
+        currentCountry = null; currentCountryName = null;
+        currentGenre = null; currentGenreName = null;
+        document.body.className = '';
+        updateFilterTags(); loadMovies();
+        loadCountries(); loadGenres();
+    }
+
+    async function quickLike(movieId, btn) {
+        const token = localStorage.getItem('token');
+        if (!token) { window.location.href = '/login'; return; }
+        const res = await fetch(`/api/movie/${movieId}/like`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'liked') {
+                btn.classList.add('btn-danger'); btn.classList.remove('btn-outline-danger');
+            } else {
+                btn.classList.remove('btn-danger'); btn.classList.add('btn-outline-danger');
+            }
+        } else if (res.status === 401 || res.status === 422) {
+            localStorage.clear();
+            window.location.href = '/login';
+        }
+    }
+
+    async function quickFavorite(movieId, btn) {
+        const token = localStorage.getItem('token');
+        if (!token) { window.location.href = '/login'; return; }
+        const res = await fetch(`/api/movie/${movieId}/favorite`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'favorited') {
+                btn.classList.add('btn-warning'); btn.classList.remove('btn-outline-warning');
+                showToast('⭐ 已收藏！在个人中心可查看');
+            } else {
+                btn.classList.remove('btn-warning'); btn.classList.add('btn-outline-warning');
+            }
+        } else if (res.status === 401 || res.status === 422) {
+            localStorage.clear();
+            window.location.href = '/login';
+        }
+    }
+
+    function showToast(msg) {
+        let t = document.getElementById('_toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = '_toast';
+            t.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:12px 24px;border-radius:24px;font-size:.9rem;z-index:9999;opacity:0;transition:opacity .3s;';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.opacity = '1';
+        setTimeout(() => t.style.opacity = '0', 2500);
+    }
+
+    // 显示添加影视剧弹窗
+    async function showAddMovieModal() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login';
+            return;
+        }
+        
+        // 获取国家和题材列表
+        const [countriesRes, genresRes] = await Promise.all([
+            fetch('/api/countries'),
+            fetch('/api/genres')
+        ]);
+        const countries = await countriesRes.json();
+        const genres = await genresRes.json();
+        
+        const modalHTML = `
+        <div class="modal fade" id="addMovieModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title"><i class="fas fa-film me-2"></i>添加新影视剧</h5>
+                        <button type="button" class="btn-close btn-close-white" onclick="closeAddMovieModal()"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="add-movie-form">
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">标题 <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" name="title" required placeholder="请输入影视剧标题">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">简介</label>
+                                        <textarea class="form-control" name="description" rows="3" placeholder="请输入剧情简介"></textarea>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label fw-bold">年份</label>
+                                            <input type="number" class="form-control" name="year" placeholder="如: 2024">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label fw-bold">豆瓣评分</label>
+                                            <input type="number" class="form-control" name="douban_score" step="0.1" min="0" max="10" placeholder="0-10">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">海报图片</label>
+                                        <input type="file" class="form-control" name="poster" accept="image/*" onchange="previewPoster(this)">
+                                        <div id="poster-preview" class="mt-2 text-center" style="min-height:150px;background:#f8f9fa;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+                                            <span class="text-muted"><i class="fas fa-image fa-2x"></i><br>预览</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">国家/地区 <span class="text-danger">*</span></label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    ${countries.map(c => `
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="countries" value="${c.id}" id="country-${c.id}">
+                                            <label class="form-check-label" for="country-${c.id}">${c.name}</label>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">题材 <span class="text-danger">*</span></label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    ${genres.map(g => `
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="genres" value="${g.id}" id="genre-${g.id}">
+                                            <label class="form-check-label" for="genre-${g.id}">${g.name}</label>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">导演</label>
+                                    <input type="text" class="form-control" name="director" placeholder="导演姓名">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">主演</label>
+                                    <input type="text" class="form-control" name="cast" placeholder="主演姓名，用逗号分隔">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">类型</label>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="is_series" value="false" id="type-movie" checked>
+                                    <label class="form-check-label" for="type-movie">电影</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="is_series" value="true" id="type-series">
+                                    <label class="form-check-label" for="type-series">剧集</label>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeAddMovieModal()">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="submitMovie()">
+                            <i class="fas fa-check me-1"></i>提交
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        
+        // 移除已存在的弹窗
+        const existingModal = document.getElementById('addMovieModal');
+        if (existingModal) existingModal.remove();
+        
+        // 添加新弹窗
+        const div = document.createElement('div');
+        div.innerHTML = modalHTML;
+        document.body.appendChild(div);
+        
+        // 显示弹窗
+        const modal = new bootstrap.Modal(document.getElementById('addMovieModal'));
+        modal.show();
+    }
+    
+    function closeAddMovieModal() {
+        const modal = document.getElementById('addMovieModal');
+        if (modal) {
+            const bsModal = bootstrap.Modal.getInstance(modal);
+            if (bsModal) bsModal.hide();
+            modal.remove();
+        }
+    }
+    
+    function previewPoster(input) {
+        const preview = document.getElementById('poster-preview');
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.innerHTML = `<img src="${e.target.result}" style="max-width:100%;max-height:200px;border-radius:8px;">`;
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    
+    async function submitMovie() {
+        const form = document.getElementById('add-movie-form');
+        const formData = new FormData(form);
+        
+        // 验证必填项
+        const title = formData.get('title');
+        if (!title) {
+            showToast('❌ 请输入标题');
+            return;
+        }
+        
+        // 获取选中的国家和题材
+        const countries = Array.from(form.querySelectorAll('input[name="countries"]:checked')).map(cb => parseInt(cb.value));
+        const genres = Array.from(form.querySelectorAll('input[name="genres"]:checked')).map(cb => parseInt(cb.value));
+        
+        if (countries.length === 0) {
+            showToast('❌ 请至少选择一个国家');
+            return;
+        }
+        if (genres.length === 0) {
+            showToast('❌ 请至少选择一个题材');
+            return;
+        }
+        
+        const token = localStorage.getItem('token');
+        
+        // 先上传图片（如果有）
+        let posterUrl = '';
+        const posterFile = formData.get('poster');
+        if (posterFile && posterFile.size > 0) {
+            const imageData = new FormData();
+            imageData.append('poster', posterFile);
+            const uploadRes = await fetch('/api/upload/poster', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: imageData
+            });
+            if (uploadRes.ok) {
+                const uploadData = await uploadRes.json();
+                posterUrl = uploadData.url;
+            }
+        }
+        
+        // 提交影视剧数据
+        const movieData = {
+            title: title,
+            description: formData.get('description'),
+            year: parseInt(formData.get('year')) || null,
+            douban_score: parseFloat(formData.get('douban_score')) || null,
+            countries: countries,
+            genres: genres,
+            director: formData.get('director'),
+            cast: formData.get('cast'),
+            is_series: formData.get('is_series') === 'true',
+            poster_url: posterUrl
+        };
+        
+        const res = await fetch('/api/movies', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(movieData)
+        });
+        
+        if (res.ok) {
+            showToast('✅ 影视剧添加成功！');
+            closeAddMovieModal();
+            loadMovies();
+        } else {
+            const err = await res.json();
+            showToast('❌ ' + (err.error || '添加失败'));
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCountries(); loadGenres(); loadMovies();
+    });
+</script>
+{% endblock %}

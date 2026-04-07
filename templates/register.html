@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-5">
+        <div class="card shadow-lg border-0">
+            <div class="card-body p-5">
+                <div class="text-center mb-4">
+                    <i class="fas fa-user-plus fa-3x text-success mb-3"></i>
+                    <h3 class="fw-bold">注册账号</h3>
+                    <p class="text-muted">加入影视剧论坛，分享你的观影体验</p>
+                </div>
+                
+                <div id="error-msg" class="alert alert-danger d-none"></div>
+                <div id="success-msg" class="alert alert-success d-none"></div>
+                
+                <form id="register-form">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">用户名 *</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-user text-muted"></i></span>
+                            <input type="text" class="form-control" id="username" placeholder="3-20个字符" required minlength="3" maxlength="20">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">邮箱 *</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-envelope text-muted"></i></span>
+                            <input type="email" class="form-control" id="email" placeholder="your@email.com" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">密码 *</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-lock text-muted"></i></span>
+                            <input type="password" class="form-control" id="password" placeholder="至少6个字符" required minlength="6">
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">确认密码 *</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-lock text-muted"></i></span>
+                            <input type="password" class="form-control" id="confirm-password" placeholder="再次输入密码" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-check mb-4">
+                        <input class="form-check-input" type="checkbox" id="agree" required>
+                        <label class="form-check-label small" for="agree">
+                            我同意遵守社区规范，不发布政治相关、血腥暴力等违规内容
+                        </label>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg" id="submit-btn">
+                            <i class="fas fa-user-plus me-2"></i>立即注册
+                        </button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                <div class="text-center text-muted small">
+                    已有账号？ <a href="/login" class="text-primary fw-semibold">去登录</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('submit-btn');
+        const errEl = document.getElementById('error-msg');
+        const sucEl = document.getElementById('success-msg');
+        
+        const password = document.getElementById('password').value;
+        const confirm = document.getElementById('confirm-password').value;
+        
+        if (password !== confirm) {
+            errEl.textContent = '两次输入的密码不一致';
+            errEl.classList.remove('d-none');
+            return;
+        }
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>注册中...';
+        errEl.classList.add('d-none');
+        
+        try {
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    email: document.getElementById('email').value,
+                    password: password
+                })
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                sucEl.textContent = '注册成功！2秒后跳转到登录页...';
+                sucEl.classList.remove('d-none');
+                setTimeout(() => window.location.href = '/login', 2000);
+            } else {
+                errEl.textContent = data.error || '注册失败';
+                errEl.classList.remove('d-none');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-user-plus me-2"></i>立即注册';
+            }
+        } catch(e) {
+            errEl.textContent = '网络错误，请稍后重试';
+            errEl.classList.remove('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-user-plus me-2"></i>立即注册';
+        }
+    });
+</script>
+{% endblock %}
